@@ -18,12 +18,12 @@
 
 package com.navercorp.fixturemonkey.kotlin
 
-import com.navercorp.fixturemonkey.api.generator.InterfaceObjectPropertyGenerator
-import com.navercorp.fixturemonkey.api.generator.ObjectPropertyGenerator
 import com.navercorp.fixturemonkey.api.introspector.MatchArbitraryIntrospector
 import com.navercorp.fixturemonkey.api.matcher.MatcherOperator
 import com.navercorp.fixturemonkey.api.option.FixtureMonkeyOptionsBuilder
 import com.navercorp.fixturemonkey.api.plugin.Plugin
+import com.navercorp.fixturemonkey.api.property.PropertyCandidateResolver
+import com.navercorp.fixturemonkey.api.property.PropertyUtils
 import com.navercorp.fixturemonkey.kotlin.generator.InterfaceKFunctionPropertyGenerator
 import com.navercorp.fixturemonkey.kotlin.generator.PairContainerPropertyGenerator
 import com.navercorp.fixturemonkey.kotlin.generator.PairDecomposedContainerValueFactory
@@ -37,28 +37,25 @@ import com.navercorp.fixturemonkey.kotlin.matcher.Matchers.PAIR_TYPE_MATCHER
 import com.navercorp.fixturemonkey.kotlin.matcher.Matchers.TRIPLE_TYPE_MATCHER
 import com.navercorp.fixturemonkey.kotlin.property.KotlinPropertyGenerator
 import com.navercorp.fixturemonkey.kotlin.type.actualType
+import java.lang.reflect.Modifier
 import com.navercorp.fixturemonkey.kotlin.type.cachedKotlin
 import org.apiguardian.api.API
 import org.apiguardian.api.API.Status.MAINTAINED
-import java.lang.reflect.Modifier
 
 @API(since = "0.4.0", status = MAINTAINED)
 class KotlinPlugin : Plugin {
     override fun accept(optionsBuilder: FixtureMonkeyOptionsBuilder) {
         optionsBuilder.objectIntrospector { PrimaryConstructorArbitraryIntrospector.INSTANCE }
             .defaultPropertyGenerator(KotlinPropertyGenerator())
-            .insertFirstArbitraryObjectPropertyGenerator(
+            .insertFirstPropertyCandidateResolver(
                 MatcherOperator(
                     { it.type.actualType().cachedKotlin().isSealed },
-                    ObjectPropertyGenerator { context ->
-                        InterfaceObjectPropertyGenerator(
-                            context.property.type.actualType().cachedKotlin().sealedSubclasses
-                                .filter { it.objectInstance == null }
-                                .map { it.java },
-                        )
-                            .generate(context)
-                    },
-                ),
+                    PropertyCandidateResolver { property ->
+                        property.type.actualType().cachedKotlin().sealedSubclasses
+                            .filter { it.objectInstance == null }
+                            .map { PropertyUtils.toProperty(it.java) }
+                    }
+                )
             )
             .insertFirstPropertyGenerator(
                 MatcherOperator(

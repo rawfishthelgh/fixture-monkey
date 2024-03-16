@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -39,9 +38,9 @@ import com.navercorp.fixturemonkey.api.generator.ContainerPropertyGeneratorConte
 import com.navercorp.fixturemonkey.api.generator.ObjectProperty;
 import com.navercorp.fixturemonkey.api.generator.ObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.api.generator.ObjectPropertyGeneratorContext;
-import com.navercorp.fixturemonkey.api.generator.SingleValueObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
 import com.navercorp.fixturemonkey.api.option.FixtureMonkeyOptions;
+import com.navercorp.fixturemonkey.api.property.ConcreteTypeDefinition;
 import com.navercorp.fixturemonkey.api.property.MapEntryElementProperty;
 import com.navercorp.fixturemonkey.api.property.Property;
 import com.navercorp.fixturemonkey.api.property.PropertyGenerator;
@@ -67,27 +66,23 @@ public final class ArbitraryTraverser {
 			this.fixtureMonkeyOptions.getContainerPropertyGenerator(property);
 		boolean container = containerPropertyGenerator != null;
 
-		ObjectPropertyGenerator objectPropertyGenerator;
-		if (container) {
-			objectPropertyGenerator = SingleValueObjectPropertyGenerator.INSTANCE;
-		} else {
-			objectPropertyGenerator = this.fixtureMonkeyOptions.getObjectPropertyGenerator(property);
-		}
+		ObjectPropertyGenerator objectPropertyGenerator = this.fixtureMonkeyOptions.getDefaultObjectPropertyGenerator();
 
-		ObjectProperty objectProperty = objectPropertyGenerator.generate(
-			new ObjectPropertyGeneratorContext(
-				property,
-				null,
-				null,
-				container,
-				getPropertyGenerator(propertyConfigurers),
-				fixtureMonkeyOptions.getPropertyNameResolver(property),
-				fixtureMonkeyOptions.getNullInjectGenerator(property)
-			)
+		ObjectPropertyGeneratorContext objectPropertyGeneratorContext = new ObjectPropertyGeneratorContext(
+			property,
+			null,
+			null,
+			container,
+			fixtureMonkeyOptions.getPropertyNameResolver(property)
 		);
+		ObjectProperty objectProperty = objectPropertyGenerator.generate(objectPropertyGeneratorContext);
 
-		ContainerProperty containerProperty = null;
 		ContainerInfoManipulator containerInfoManipulator = null;
+		List<ConcreteTypeDefinition> concreteTypeDefinitions = new ArrayList<>();
+		List<Property> candidateProperties = fixtureMonkeyOptions.getPropertyResolvers(property).stream()
+			.flatMap(it -> it.resolveCandidateProperties(property).stream())
+			.collect(Collectors.toList());
+
 		if (container) {
 			containerInfoManipulator = resolveAppliedContainerInfoManipulator(
 				containerInfoManipulators,
@@ -97,7 +92,7 @@ public final class ArbitraryTraverser {
 				? containerInfoManipulator.getContainerInfo()
 				: null;
 
-			containerProperty = containerPropertyGenerator.generate(
+			ContainerProperty containerProperty = containerPropertyGenerator.generate(
 				new ContainerPropertyGeneratorContext(
 					property,
 					null,
@@ -105,23 +100,32 @@ public final class ArbitraryTraverser {
 					fixtureMonkeyOptions.getArbitraryContainerInfoGenerator(property)
 				)
 			);
-		}
 
-		Map<Property, List<Property>> childPropertyListsByCandidateProperty;
-		if (container) {
-			childPropertyListsByCandidateProperty = Collections.singletonMap(
-				property,
-				containerProperty.getElementProperties()
+			concreteTypeDefinitions.addAll(
+				candidateProperties.stream()
+					.map(it -> new ConcreteTypeDefinition(it, containerProperty.getElementProperties()))
+					.collect(Collectors.toList())
 			);
 		} else {
-			childPropertyListsByCandidateProperty = objectProperty.getChildPropertyListsByCandidateProperty();
+			concreteTypeDefinitions.addAll(
+				candidateProperties.stream()
+					.map(it -> new ConcreteTypeDefinition(
+							it,
+							getPropertyGenerator(propertyConfigurers).generateChildProperties(it)
+						)
+					)
+					.collect(Collectors.toList())
+			);
 		}
+
+		double nullInject = fixtureMonkeyOptions.getNullInjectGenerator(property)
+			.generate(objectPropertyGeneratorContext);
 
 		ArbitraryProperty arbitraryProperty = new ArbitraryProperty(
 			objectProperty,
 			container,
-			objectProperty.getNullInject(),
-			childPropertyListsByCandidateProperty
+			nullInject,
+			concreteTypeDefinitions
 		);
 
 		List<ArbitraryProperty> parentArbitraryProperties = new ArrayList<>();
@@ -178,17 +182,12 @@ public final class ArbitraryTraverser {
 		boolean container,
 		TraverseContext context
 	) {
+		List<ConcreteTypeDefinition> concreteTypeDefinitions = arbitraryProperty.getConcreteTypeDefinitions();
 		List<ObjectNode> children = new ArrayList<>();
 
-		Map<Property, List<Property>> childPropertyListsByCandidateProperty =
-			arbitraryProperty.getChildPropertyListsByCandidateProperty();
-
-		for (
-			Entry<Property, List<Property>> childPropertiesByCandidateProperty :
-			childPropertyListsByCandidateProperty.entrySet()
-		) {
-			List<Property> childProperties = childPropertiesByCandidateProperty.getValue();
-			Property candidateProperty = childPropertiesByCandidateProperty.getKey();
+		for (ConcreteTypeDefinition concreteTypeDefinition : concreteTypeDefinitions) {
+			Property candidateProperty = concreteTypeDefinition.getConcreteProperty();
+			List<Property> childProperties = concreteTypeDefinition.getChildPropertyLists();
 
 			children.addAll(
 				generateChildrenNodes(
@@ -201,8 +200,9 @@ public final class ArbitraryTraverser {
 			);
 		}
 
-		Property resolvedProperty = new ArrayList<>(childPropertyListsByCandidateProperty.keySet())
-			.get(Randoms.nextInt(childPropertyListsByCandidateProperty.size()));
+		ConcreteTypeDefinition resolvedConcreteTypeDefinition =
+			concreteTypeDefinitions.get(Randoms.nextInt(concreteTypeDefinitions.size()));
+		Property resolvedProperty = resolvedConcreteTypeDefinition.getConcreteProperty();
 
 		return new ObjectNode(
 			resolvedParentProperty,
@@ -233,33 +233,26 @@ public final class ArbitraryTraverser {
 				this.fixtureMonkeyOptions.getContainerPropertyGenerator(childProperty);
 			boolean childContainer = containerPropertyGenerator != null;
 
-			ObjectPropertyGenerator objectPropertyGenerator;
-			if (childContainer) {
-				objectPropertyGenerator = SingleValueObjectPropertyGenerator.INSTANCE;
-			} else {
-				objectPropertyGenerator = this.fixtureMonkeyOptions.getObjectPropertyGenerator(childProperty);
-			}
+			ObjectPropertyGenerator objectPropertyGenerator = fixtureMonkeyOptions.getDefaultObjectPropertyGenerator();
 
 			int index = sequence;
 			if (parentArbitraryProperty.getObjectProperty().getProperty() instanceof MapEntryElementProperty) {
 				index /= 2;
 			}
 
-			ObjectProperty childObjectProperty = objectPropertyGenerator.generate(
-				new ObjectPropertyGeneratorContext(
-					childProperty,
-					parentContainer ? index : null,
-					parentArbitraryProperty,
-					childContainer,
-					getPropertyGenerator(context.getPropertyConfigurers()),
-					fixtureMonkeyOptions.getPropertyNameResolver(childProperty),
-					fixtureMonkeyOptions.getNullInjectGenerator(childProperty)
-				)
+			ObjectPropertyGeneratorContext childObjectPropertyGeneratorContext = new ObjectPropertyGeneratorContext(
+				childProperty,
+				parentContainer ? index : null,
+				parentArbitraryProperty,
+				childContainer,
+				fixtureMonkeyOptions.getPropertyNameResolver(childProperty)
 			);
+			ObjectProperty childObjectProperty = objectPropertyGenerator.generate(childObjectPropertyGeneratorContext);
 
-			Map<Property, List<Property>> childPropertyListsByCandidateProperty;
-
-			ContainerProperty childContainerProperty = null;
+			List<ConcreteTypeDefinition> concreteTypeDefinitions = new ArrayList<>();
+			List<Property> candidateProperties = fixtureMonkeyOptions.getPropertyResolvers(childProperty).stream()
+				.flatMap(it -> it.resolveCandidateProperties(childProperty).stream())
+				.collect(Collectors.toList());
 			ContainerInfoManipulator appliedContainerInfoManipulator = null;
 			if (childContainer) {
 				List<ObjectProperty> objectProperties =
@@ -274,7 +267,7 @@ public final class ArbitraryTraverser {
 				ArbitraryContainerInfo containerInfo = appliedContainerInfoManipulator != null
 					? appliedContainerInfoManipulator.getContainerInfo()
 					: null;
-				childContainerProperty = containerPropertyGenerator.generate(
+				ContainerProperty childContainerProperty = containerPropertyGenerator.generate(
 					new ContainerPropertyGeneratorContext(
 						childProperty,
 						parentContainer ? index : null,
@@ -282,19 +275,31 @@ public final class ArbitraryTraverser {
 						fixtureMonkeyOptions.getArbitraryContainerInfoGenerator(childProperty)
 					)
 				);
-				childPropertyListsByCandidateProperty = Collections.singletonMap(
-					childProperty,
-					childContainerProperty.getElementProperties()
+				concreteTypeDefinitions.addAll(
+					candidateProperties.stream()
+						.map(it -> new ConcreteTypeDefinition(it, childContainerProperty.getElementProperties()))
+						.collect(Collectors.toList())
 				);
 			} else {
-				childPropertyListsByCandidateProperty = childObjectProperty.getChildPropertyListsByCandidateProperty();
+				concreteTypeDefinitions.addAll(
+					candidateProperties.stream()
+						.map(it -> new ConcreteTypeDefinition(
+								it,
+								getPropertyGenerator(context.getPropertyConfigurers()).generateChildProperties(it)
+							)
+						)
+						.collect(Collectors.toList())
+				);
 			}
+
+			double nullInject = fixtureMonkeyOptions.getNullInjectGenerator(childProperty)
+				.generate(childObjectPropertyGeneratorContext);
 
 			ArbitraryProperty childArbitraryProperty = new ArbitraryProperty(
 				childObjectProperty,
 				childContainer,
-				childObjectProperty.getNullInject(),
-				childPropertyListsByCandidateProperty
+				nullInject,
+				concreteTypeDefinitions
 			);
 
 			ObjectNode childNode = generateObjectNode(

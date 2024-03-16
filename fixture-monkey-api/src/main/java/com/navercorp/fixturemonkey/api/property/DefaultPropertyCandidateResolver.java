@@ -16,27 +16,18 @@
  * limitations under the License.
  */
 
-package com.navercorp.fixturemonkey.api.option;
+package com.navercorp.fixturemonkey.api.property;
 
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import org.apiguardian.api.API;
 import org.apiguardian.api.API.Status;
 
-import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
-import com.navercorp.fixturemonkey.api.property.PropertyUtils;
-import com.navercorp.fixturemonkey.api.type.Types;
-
-@API(since = "1.0.14", status = Status.INTERNAL)
-public final class JdkVariantOptions {
-	public void apply(FixtureMonkeyOptionsBuilder optionsBuilder) {
-		optionsBuilder.insertFirstPropertyCandidateResolver(
-			new MatcherOperator<>(
-				p -> Types.getActualType(p.getType()).isSealed(),
-				p -> Arrays.stream(Types.getActualType(p.getType()).getPermittedSubclasses())
-					.map(PropertyUtils::toProperty)
-					.toList()
-			)
-		);
+@API(since = "1.1.0", status = Status.EXPERIMENTAL)
+public final class DefaultPropertyCandidateResolver implements PropertyCandidateResolver {
+	@Override
+	public List<Property> resolveCandidateProperties(Property property) {
+		return Collections.singletonList(property);
 	}
 }

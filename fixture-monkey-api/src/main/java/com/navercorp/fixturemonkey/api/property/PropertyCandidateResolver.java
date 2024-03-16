@@ -16,27 +16,25 @@
  * limitations under the License.
  */
 
-package com.navercorp.fixturemonkey.api.option;
+package com.navercorp.fixturemonkey.api.property;
 
-import java.util.Arrays;
+import java.util.List;
 
 import org.apiguardian.api.API;
 import org.apiguardian.api.API.Status;
 
-import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
-import com.navercorp.fixturemonkey.api.property.PropertyUtils;
-import com.navercorp.fixturemonkey.api.type.Types;
-
-@API(since = "1.0.14", status = Status.INTERNAL)
-public final class JdkVariantOptions {
-	public void apply(FixtureMonkeyOptionsBuilder optionsBuilder) {
-		optionsBuilder.insertFirstPropertyCandidateResolver(
-			new MatcherOperator<>(
-				p -> Types.getActualType(p.getType()).isSealed(),
-				p -> Arrays.stream(Types.getActualType(p.getType()).getPermittedSubclasses())
-					.map(PropertyUtils::toProperty)
-					.toList()
-			)
-		);
-	}
+/**
+ * It resolves the concrete type {@link Property} of the given {@link Property}.
+ */
+@FunctionalInterface
+@API(since = "1.1.0", status = Status.EXPERIMENTAL)
+public interface PropertyCandidateResolver {
+	/**
+	 * resolves the candidate concrete type properties for the given property.
+	 *
+	 * @param property it could be a property of concrete type or an abstract class or interface.
+	 * @return the resolved property that is actually generated type of property.
+	 * It will return property if property is a property of concrete type.
+	 */
+	List<Property> resolveCandidateProperties(Property property);
 }

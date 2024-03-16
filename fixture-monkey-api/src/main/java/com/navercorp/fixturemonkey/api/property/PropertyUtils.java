@@ -67,6 +67,24 @@ public abstract class PropertyUtils {
 			public Object getValue(Object instance) {
 				throw new UnsupportedOperationException();
 			}
+
+			@Override
+			public int hashCode() {
+				return annotatedType.getType().hashCode();
+			}
+
+			@Override
+			public boolean equals(Object obj) {
+				if (this == obj) {
+					return true;
+				}
+				if (obj == null || Types.isAssignable(getClass(), obj.getClass())) {
+					return false;
+				}
+
+				Property that = (Property)obj;
+				return annotatedType.getType().equals(that.getAnnotatedType().getType());
+			}
 		};
 	}
 

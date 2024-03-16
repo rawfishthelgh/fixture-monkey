@@ -20,10 +20,14 @@ package com.navercorp.fixturemonkey.api.property;
 
 import java.util.List;
 
+import org.apiguardian.api.API;
+import org.apiguardian.api.API.Status;
+
 /**
  * Represents a concrete type definition with a resolved concrete property and a list of child properties.
  * Instances of this class are immutable once created.
  */
+@API(since = "1.0.14", status = Status.EXPERIMENTAL)
 public final class ConcreteTypeDefinition {
 	private final Property concreteProperty;
 	private final List<Property> childPropertyLists;

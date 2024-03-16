@@ -34,19 +34,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navercorp.fixturemonkey.api.introspector.MatchArbitraryIntrospector;
 import com.navercorp.fixturemonkey.api.matcher.AssignableTypeMatcher;
 import com.navercorp.fixturemonkey.api.matcher.Matcher;
+import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
 import com.navercorp.fixturemonkey.api.option.FixtureMonkeyOptionsBuilder;
 import com.navercorp.fixturemonkey.api.plugin.Plugin;
 import com.navercorp.fixturemonkey.api.property.ElementProperty;
 import com.navercorp.fixturemonkey.jackson.FixtureMonkeyJackson;
-import com.navercorp.fixturemonkey.jackson.generator.ElementJsonSubTypesObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.jackson.generator.JsonNodeContainerPropertyGenerator;
-import com.navercorp.fixturemonkey.jackson.generator.PropertyJsonSubTypesObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.jackson.introspector.JacksonArrayArbitraryIntrospector;
 import com.navercorp.fixturemonkey.jackson.introspector.JacksonCollectionArbitraryIntrospector;
 import com.navercorp.fixturemonkey.jackson.introspector.JacksonMapArbitraryIntrospector;
 import com.navercorp.fixturemonkey.jackson.introspector.JacksonObjectArbitraryIntrospector;
 import com.navercorp.fixturemonkey.jackson.introspector.JsonNodeIntrospector;
 import com.navercorp.fixturemonkey.jackson.property.JacksonPropertyNameResolver;
+import com.navercorp.fixturemonkey.jackson.property.JacksonTypeInfoPropertyCandidateResolver;
 
 @API(since = "0.4.0", status = Status.MAINTAINED)
 public final class JacksonPlugin implements Plugin {
@@ -99,16 +99,16 @@ public final class JacksonPlugin implements Plugin {
 						container
 					)
 				))
-				.insertFirstArbitraryObjectPropertyGenerator(
-					property -> getJacksonAnnotation(property, JsonSubTypes.class) != null,
-					PropertyJsonSubTypesObjectPropertyGenerator.INSTANCE
-				)
-				.insertFirstArbitraryObjectPropertyGenerator(
-					property -> property instanceof ElementProperty
-						&& getJacksonAnnotation(((ElementProperty)property).getContainerProperty(),
-						JsonSubTypes.class
-					) != null,
-					ElementJsonSubTypesObjectPropertyGenerator.INSTANCE
+				.insertFirstPropertyCandidateResolver(
+					new MatcherOperator<>(
+						property -> getJacksonAnnotation(property, JsonSubTypes.class) != null
+							|| (property instanceof ElementProperty
+							&& getJacksonAnnotation(
+							((ElementProperty)property).getContainerProperty(),
+							JsonSubTypes.class
+						) != null),
+						new JacksonTypeInfoPropertyCandidateResolver()
+					)
 				);
 		}
 

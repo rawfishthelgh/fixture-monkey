@@ -32,6 +32,7 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
@@ -59,7 +60,6 @@ import com.navercorp.fixturemonkey.api.generator.NullInjectGenerator;
 import com.navercorp.fixturemonkey.api.generator.ObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.api.generator.OptionalContainerPropertyGenerator;
 import com.navercorp.fixturemonkey.api.generator.SetContainerPropertyGenerator;
-import com.navercorp.fixturemonkey.api.generator.SingleValueObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.api.generator.StreamContainerPropertyGenerator;
 import com.navercorp.fixturemonkey.api.instantiator.InstantiatorProcessor;
 import com.navercorp.fixturemonkey.api.introspector.ArbitraryIntrospector;
@@ -69,10 +69,11 @@ import com.navercorp.fixturemonkey.api.matcher.AssignableTypeMatcher;
 import com.navercorp.fixturemonkey.api.matcher.DoubleGenericTypeMatcher;
 import com.navercorp.fixturemonkey.api.matcher.ExactPropertyMatcher;
 import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
-import com.navercorp.fixturemonkey.api.matcher.Matchers;
 import com.navercorp.fixturemonkey.api.matcher.SingleGenericTypeMatcher;
+import com.navercorp.fixturemonkey.api.property.DefaultPropertyCandidateResolver;
 import com.navercorp.fixturemonkey.api.property.MapEntryElementProperty;
 import com.navercorp.fixturemonkey.api.property.Property;
+import com.navercorp.fixturemonkey.api.property.PropertyCandidateResolver;
 import com.navercorp.fixturemonkey.api.property.PropertyGenerator;
 import com.navercorp.fixturemonkey.api.property.PropertyNameResolver;
 import com.navercorp.fixturemonkey.api.type.Types;
@@ -83,8 +84,6 @@ import com.navercorp.fixturemonkey.api.validator.ArbitraryValidator;
 @API(since = "0.6.0", status = Status.MAINTAINED)
 public final class FixtureMonkeyOptions {
 	private static final List<String> DEFAULT_JAVA_PACKAGES;
-	public static final List<MatcherOperator<ObjectPropertyGenerator>> DEFAULT_OBJECT_PROPERTY_GENERATORS =
-		getDefaultObjectPropertyGenerators();
 	public static final List<MatcherOperator<ContainerPropertyGenerator>> DEFAULT_CONTAINER_PROPERTY_GENERATORS =
 		getDefaultContainerPropertyGenerators();
 	public static final List<MatcherOperator<ArbitraryIntrospector>> DEFAULT_ARBITRARY_INTROSPECTORS =
@@ -119,7 +118,6 @@ public final class FixtureMonkeyOptions {
 
 	private final List<MatcherOperator<PropertyGenerator>> propertyGenerators;
 	private final PropertyGenerator defaultPropertyGenerator;
-	private final List<MatcherOperator<ObjectPropertyGenerator>> objectPropertyGenerators;
 	private final ObjectPropertyGenerator defaultObjectPropertyGenerator;
 	private final List<MatcherOperator<ContainerPropertyGenerator>> containerPropertyGenerators;
 	private final List<MatcherOperator<PropertyNameResolver>> propertyNameResolvers;
@@ -135,11 +133,11 @@ public final class FixtureMonkeyOptions {
 	private final int generateUniqueMaxTries;
 	private final JavaConstraintGenerator javaConstraintGenerator;
 	private final InstantiatorProcessor instantiatorProcessor;
+	private final List<MatcherOperator<PropertyCandidateResolver>> propertyCandidateResolvers;
 
 	public FixtureMonkeyOptions(
 		List<MatcherOperator<PropertyGenerator>> propertyGenerators,
 		PropertyGenerator defaultPropertyGenerator,
-		List<MatcherOperator<ObjectPropertyGenerator>> objectPropertyGenerators,
 		ObjectPropertyGenerator defaultObjectPropertyGenerator,
 		List<MatcherOperator<ContainerPropertyGenerator>> containerPropertyGenerators,
 		List<MatcherOperator<PropertyNameResolver>> propertyNameResolvers,
@@ -154,11 +152,11 @@ public final class FixtureMonkeyOptions {
 		int generateMaxTries,
 		int generateUniqueMaxTries,
 		JavaConstraintGenerator javaConstraintGenerator,
-		InstantiatorProcessor instantiatorProcessor
+		InstantiatorProcessor instantiatorProcessor,
+		List<MatcherOperator<PropertyCandidateResolver>> propertyCandidateResolvers
 	) {
 		this.propertyGenerators = propertyGenerators;
 		this.defaultPropertyGenerator = defaultPropertyGenerator;
-		this.objectPropertyGenerators = objectPropertyGenerators;
 		this.defaultObjectPropertyGenerator = defaultObjectPropertyGenerator;
 		this.containerPropertyGenerators = containerPropertyGenerators;
 		this.propertyNameResolvers = propertyNameResolvers;
@@ -174,6 +172,7 @@ public final class FixtureMonkeyOptions {
 		this.generateUniqueMaxTries = generateUniqueMaxTries;
 		this.javaConstraintGenerator = javaConstraintGenerator;
 		this.instantiatorProcessor = instantiatorProcessor;
+		this.propertyCandidateResolvers = propertyCandidateResolvers;
 	}
 
 	public static FixtureMonkeyOptionsBuilder builder() {
@@ -208,18 +207,6 @@ public final class FixtureMonkeyOptions {
 
 	public PropertyGenerator getDefaultPropertyGenerator() {
 		return defaultPropertyGenerator;
-	}
-
-	public List<MatcherOperator<ObjectPropertyGenerator>> getObjectPropertyGenerators() {
-		return objectPropertyGenerators;
-	}
-
-	public ObjectPropertyGenerator getObjectPropertyGenerator(Property property) {
-		return this.getObjectPropertyGenerators().stream()
-			.filter(it -> it.match(property))
-			.map(MatcherOperator::getOperator)
-			.findFirst()
-			.orElse(this.getDefaultObjectPropertyGenerator());
 	}
 
 	public ObjectPropertyGenerator getDefaultObjectPropertyGenerator() {
@@ -315,10 +302,27 @@ public final class FixtureMonkeyOptions {
 		return instantiatorProcessor;
 	}
 
+	public List<MatcherOperator<PropertyCandidateResolver>> getPropertyCandidateResolvers() {
+		return propertyCandidateResolvers;
+	}
+
+	public List<PropertyCandidateResolver> getPropertyResolvers(Property property) {
+		List<PropertyCandidateResolver> customizedPropertyCandidateResolvers = this.getPropertyCandidateResolvers()
+			.stream()
+			.filter(it -> it.match(property))
+			.map(MatcherOperator::getOperator)
+			.collect(Collectors.toList());
+
+		if (customizedPropertyCandidateResolvers.isEmpty()) {
+			return Collections.singletonList(new DefaultPropertyCandidateResolver());
+		}
+
+		return customizedPropertyCandidateResolvers;
+	}
+
 	public FixtureMonkeyOptionsBuilder toBuilder() {
 		return builder()
 			.defaultPropertyGenerator(defaultPropertyGenerator)
-			.arbitraryObjectPropertyGenerators(objectPropertyGenerators)
 			.defaultObjectPropertyGenerator(defaultObjectPropertyGenerator)
 			.arbitraryContainerPropertyGenerators(containerPropertyGenerators)
 			.propertyNameResolvers(new ArrayList<>(this.propertyNameResolvers))
@@ -330,23 +334,8 @@ public final class FixtureMonkeyOptions {
 			.defaultArbitraryValidator(defaultArbitraryValidator)
 			.decomposedContainerValueFactory(decomposedContainerValueFactory)
 			.javaConstraintGenerator(javaConstraintGenerator)
-			.instantiatorProcessor(instantiatorProcessor);
-	}
-
-	private static List<MatcherOperator<ObjectPropertyGenerator>> getDefaultObjectPropertyGenerators(
-	) {
-		return Arrays.asList(
-			new MatcherOperator<>(
-				property -> {
-					Class<?> actualType = Types.getActualType(property.getType());
-					return actualType.isPrimitive()
-						|| DEFAULT_JAVA_PACKAGES.stream()
-						.anyMatch(actualType.getPackage().getName()::startsWith);
-				},
-				SingleValueObjectPropertyGenerator.INSTANCE
-			),
-			new MatcherOperator<>(Matchers.ENUM_TYPE_MATCHER, SingleValueObjectPropertyGenerator.INSTANCE)
-		);
+			.instantiatorProcessor(instantiatorProcessor)
+			.propertyCandidateResolvers(propertyCandidateResolvers);
 	}
 
 	private static List<MatcherOperator<ContainerPropertyGenerator>> getDefaultContainerPropertyGenerators() {
@@ -416,10 +405,20 @@ public final class FixtureMonkeyOptions {
 	}
 
 	private static List<MatcherOperator<PropertyGenerator>> getDefaultPropertyGenerators() {
-		return Collections.singletonList(
+		return Arrays.asList(
 			new MatcherOperator<>(
 				p -> Modifier.isInterface(Types.getActualType(p.getType()).getModifiers()),
 				new NoArgumentInterfaceJavaMethodPropertyGenerator()
+			),
+			new MatcherOperator<>(
+				property -> {
+					Class<?> actualType = Types.getActualType(property.getType());
+					return actualType.isEnum()
+						|| actualType.isPrimitive()
+						|| DEFAULT_JAVA_PACKAGES.stream()
+						.anyMatch(actualType.getPackage().getName()::startsWith);
+				},
+				p -> Collections.emptyList()
 			)
 		);
 	}

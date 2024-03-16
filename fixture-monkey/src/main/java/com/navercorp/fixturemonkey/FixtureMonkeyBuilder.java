@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 
 import org.apiguardian.api.API;
 import org.apiguardian.api.API.Status;
@@ -36,7 +37,6 @@ import com.navercorp.fixturemonkey.api.context.MonkeyContextBuilder;
 import com.navercorp.fixturemonkey.api.generator.ArbitraryContainerInfoGenerator;
 import com.navercorp.fixturemonkey.api.generator.ArbitraryGenerator;
 import com.navercorp.fixturemonkey.api.generator.ContainerPropertyGenerator;
-import com.navercorp.fixturemonkey.api.generator.InterfaceObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.api.generator.NullInjectGenerator;
 import com.navercorp.fixturemonkey.api.generator.ObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.api.introspector.ArbitraryIntrospector;
@@ -52,6 +52,7 @@ import com.navercorp.fixturemonkey.api.plugin.InterfacePlugin;
 import com.navercorp.fixturemonkey.api.plugin.Plugin;
 import com.navercorp.fixturemonkey.api.property.PropertyGenerator;
 import com.navercorp.fixturemonkey.api.property.PropertyNameResolver;
+import com.navercorp.fixturemonkey.api.property.PropertyUtils;
 import com.navercorp.fixturemonkey.api.random.Randoms;
 import com.navercorp.fixturemonkey.api.type.Types;
 import com.navercorp.fixturemonkey.api.validator.ArbitraryValidator;
@@ -107,31 +108,6 @@ public final class FixtureMonkeyBuilder {
 		ObjectPropertyGenerator objectPropertyGenerator
 	) {
 		fixtureMonkeyOptionsBuilder.defaultObjectPropertyGenerator(objectPropertyGenerator);
-		return this;
-	}
-
-	public FixtureMonkeyBuilder pushAssignableTypeObjectPropertyGenerator(
-		Class<?> type,
-		ObjectPropertyGenerator objectPropertyGenerator
-	) {
-		fixtureMonkeyOptionsBuilder.insertFirstArbitraryObjectPropertyGenerator(type, objectPropertyGenerator);
-		return this;
-	}
-
-	public FixtureMonkeyBuilder pushExactTypeObjectPropertyGenerator(
-		Class<?> type,
-		ObjectPropertyGenerator objectPropertyGenerator
-	) {
-		fixtureMonkeyOptionsBuilder.insertFirstArbitraryObjectPropertyGenerator(
-			MatcherOperator.exactTypeMatchOperator(type, objectPropertyGenerator)
-		);
-		return this;
-	}
-
-	public FixtureMonkeyBuilder pushObjectPropertyGenerator(
-		MatcherOperator<ObjectPropertyGenerator> objectPropertyGenerator
-	) {
-		fixtureMonkeyOptionsBuilder.insertFirstArbitraryObjectPropertyGenerator(objectPropertyGenerator);
 		return this;
 	}
 
@@ -455,8 +431,13 @@ public final class FixtureMonkeyBuilder {
 		Matcher matcher,
 		List<Class<? extends T>> implementations
 	) {
-		this.pushObjectPropertyGenerator(
-			new MatcherOperator<>(matcher, new InterfaceObjectPropertyGenerator<>(implementations))
+		this.fixtureMonkeyOptionsBuilder.insertFirstPropertyCandidateResolver(
+			new MatcherOperator<>(
+				matcher,
+				p -> implementations.stream()
+					.map(PropertyUtils::toProperty)
+					.collect(Collectors.toList())
+			)
 		);
 		return this;
 	}

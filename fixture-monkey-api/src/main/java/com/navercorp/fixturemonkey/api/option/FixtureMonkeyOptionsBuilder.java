@@ -75,6 +75,7 @@ import com.navercorp.fixturemonkey.api.matcher.Matcher;
 import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
 import com.navercorp.fixturemonkey.api.plugin.Plugin;
 import com.navercorp.fixturemonkey.api.property.DefaultPropertyGenerator;
+import com.navercorp.fixturemonkey.api.property.PropertyCandidateResolver;
 import com.navercorp.fixturemonkey.api.property.PropertyGenerator;
 import com.navercorp.fixturemonkey.api.property.PropertyNameResolver;
 import com.navercorp.fixturemonkey.api.validator.ArbitraryValidator;
@@ -85,8 +86,6 @@ public final class FixtureMonkeyOptionsBuilder {
 	private List<MatcherOperator<PropertyGenerator>> propertyGenerators =
 		new ArrayList<>(FixtureMonkeyOptions.DEFAULT_PROPERTY_GENERATORS);
 	private PropertyGenerator defaultPropertyGenerator = new DefaultPropertyGenerator();
-	private List<MatcherOperator<ObjectPropertyGenerator>> arbitraryObjectPropertyGenerators =
-		new ArrayList<>(FixtureMonkeyOptions.DEFAULT_OBJECT_PROPERTY_GENERATORS);
 	private List<MatcherOperator<ContainerPropertyGenerator>> containerPropertyGenerators =
 		new ArrayList<>(FixtureMonkeyOptions.DEFAULT_CONTAINER_PROPERTY_GENERATORS);
 	private ObjectPropertyGenerator defaultObjectPropertyGenerator;
@@ -134,6 +133,7 @@ public final class FixtureMonkeyOptionsBuilder {
 	private Function<JavaConstraintGenerator, JavaTimeArbitraryGeneratorSet> generateJavaTimeArbitrarySet = null;
 	private InstantiatorProcessor instantiatorProcessor = new JavaInstantiatorProcessor();
 	private final JdkVariantOptions jdkVariantOptions = new JdkVariantOptions();
+	private List<MatcherOperator<PropertyCandidateResolver>> propertyCandidateResolvers = new ArrayList<>();
 
 	FixtureMonkeyOptionsBuilder() {
 	}
@@ -172,39 +172,6 @@ public final class FixtureMonkeyOptionsBuilder {
 	public FixtureMonkeyOptionsBuilder defaultPropertyGenerator(PropertyGenerator propertyGenerator) {
 		this.defaultPropertyGenerator = propertyGenerator;
 		return this;
-	}
-
-	public FixtureMonkeyOptionsBuilder arbitraryObjectPropertyGenerators(
-		List<MatcherOperator<ObjectPropertyGenerator>> arbitraryObjectPropertyGenerators
-	) {
-		this.arbitraryObjectPropertyGenerators = arbitraryObjectPropertyGenerators;
-		return this;
-	}
-
-	public FixtureMonkeyOptionsBuilder insertFirstArbitraryObjectPropertyGenerator(
-		MatcherOperator<ObjectPropertyGenerator> arbitraryObjectPropertyGenerator
-	) {
-		List<MatcherOperator<ObjectPropertyGenerator>> result =
-			insertFirst(this.arbitraryObjectPropertyGenerators, arbitraryObjectPropertyGenerator);
-		return this.arbitraryObjectPropertyGenerators(result);
-	}
-
-	public FixtureMonkeyOptionsBuilder insertFirstArbitraryObjectPropertyGenerator(
-		Matcher matcher,
-		ObjectPropertyGenerator objectPropertyGenerator
-	) {
-		return this.insertFirstArbitraryObjectPropertyGenerator(
-			new MatcherOperator<>(matcher, objectPropertyGenerator)
-		);
-	}
-
-	public FixtureMonkeyOptionsBuilder insertFirstArbitraryObjectPropertyGenerator(
-		Class<?> type,
-		ObjectPropertyGenerator objectPropertyGenerator
-	) {
-		return this.insertFirstArbitraryObjectPropertyGenerator(
-			MatcherOperator.assignableTypeMatchOperator(type, objectPropertyGenerator)
-		);
 	}
 
 	public FixtureMonkeyOptionsBuilder arbitraryContainerPropertyGenerators(
@@ -511,6 +478,20 @@ public final class FixtureMonkeyOptionsBuilder {
 		return this;
 	}
 
+	public FixtureMonkeyOptionsBuilder insertFirstPropertyCandidateResolver(
+		MatcherOperator<PropertyCandidateResolver> propertyCandidateResolver
+	) {
+		this.propertyCandidateResolvers = insertFirst(this.propertyCandidateResolvers, propertyCandidateResolver);
+		return this;
+	}
+
+	public FixtureMonkeyOptionsBuilder propertyCandidateResolvers(
+		List<MatcherOperator<PropertyCandidateResolver>> propertyCandidateResolvers
+	) {
+		this.propertyCandidateResolvers = propertyCandidateResolvers;
+		return this;
+	}
+
 	public FixtureMonkeyOptions build() {
 		jdkVariantOptions.apply(this);
 
@@ -623,7 +604,6 @@ public final class FixtureMonkeyOptionsBuilder {
 		return new FixtureMonkeyOptions(
 			this.propertyGenerators,
 			this.defaultPropertyGenerator,
-			this.arbitraryObjectPropertyGenerators,
 			defaultObjectPropertyGenerator,
 			this.containerPropertyGenerators,
 			this.propertyNameResolvers,
@@ -638,7 +618,8 @@ public final class FixtureMonkeyOptionsBuilder {
 			this.generateMaxTries,
 			this.generateUniqueMaxTries,
 			resolvedJavaConstraintGenerator,
-			this.instantiatorProcessor
+			this.instantiatorProcessor,
+			propertyCandidateResolvers
 		);
 	}
 
