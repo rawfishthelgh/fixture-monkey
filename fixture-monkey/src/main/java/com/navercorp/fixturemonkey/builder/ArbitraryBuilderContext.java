@@ -33,10 +33,13 @@ import org.apiguardian.api.API;
 import org.apiguardian.api.API.Status;
 
 import com.navercorp.fixturemonkey.api.arbitrary.CombinableArbitrary;
+import com.navercorp.fixturemonkey.api.context.MonkeyContext;
 import com.navercorp.fixturemonkey.api.introspector.ArbitraryIntrospector;
+import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
 import com.navercorp.fixturemonkey.api.property.Property;
 import com.navercorp.fixturemonkey.customizer.ArbitraryManipulator;
 import com.navercorp.fixturemonkey.customizer.ContainerInfoManipulator;
+import com.navercorp.fixturemonkey.tree.TraverseContext;
 
 @API(since = "0.4.0", status = Status.MAINTAINED)
 public final class ArbitraryBuilderContext {
@@ -44,6 +47,7 @@ public final class ArbitraryBuilderContext {
 	private final List<ContainerInfoManipulator> containerInfoManipulators;
 	private final Map<Class<?>, List<Property>> propertyConfigurers;
 	private final Map<Class<?>, ArbitraryIntrospector> arbitraryIntrospectorsByType;
+	private final MonkeyContext monkeyContext;
 
 	private boolean validOnly;
 
@@ -59,7 +63,8 @@ public final class ArbitraryBuilderContext {
 		Map<Class<?>, ArbitraryIntrospector> arbitraryIntrospectorsByType,
 		boolean validOnly,
 		@Nullable FixedState fixedState,
-		@Nullable CombinableArbitrary<?> fixedCombinableArbitrary
+		@Nullable CombinableArbitrary<?> fixedCombinableArbitrary,
+		MonkeyContext monkeyContext
 	) {
 		this.manipulators = manipulators;
 		this.containerInfoManipulators = containerInfoManipulators;
@@ -68,10 +73,24 @@ public final class ArbitraryBuilderContext {
 		this.validOnly = validOnly;
 		this.fixedState = fixedState;
 		this.fixedCombinableArbitrary = fixedCombinableArbitrary;
+		this.monkeyContext = monkeyContext;
 	}
 
-	public ArbitraryBuilderContext() {
-		this(new ArrayList<>(), new ArrayList<>(), new HashMap<>(), new HashMap<>(), true, null, null);
+	/**
+	 * It is in {@link ArbitraryBuilderContext} due to MonkeyContext is in api module.
+	 * It will be removed when all related class migrate to api module.
+	 */
+	@Deprecated
+	public static ArbitraryBuilderContext retrieveBuilderContext(MonkeyContext monkeyContext) {
+		return new ArbitraryBuilderContext(
+			new ArrayList<>(),
+			new ArrayList<>(),
+			new HashMap<>(),
+			new HashMap<>(),
+			true,
+			null, null,
+			monkeyContext
+		);
 	}
 
 	public ArbitraryBuilderContext copy() {
@@ -86,7 +105,8 @@ public final class ArbitraryBuilderContext {
 			new HashMap<>(arbitraryIntrospectorsByType),
 			this.validOnly,
 			fixedState,
-			fixedCombinableArbitrary
+			fixedCombinableArbitrary,
+			monkeyContext
 		);
 	}
 
@@ -166,6 +186,27 @@ public final class ArbitraryBuilderContext {
 	@Nullable
 	public CombinableArbitrary<?> getFixedCombinableArbitrary() {
 		return fixedCombinableArbitrary;
+	}
+
+	public TraverseContext retrieveTraverseContext() {
+		List<MatcherOperator<List<ContainerInfoManipulator>>> registeredContainerInfoManipulators =
+			monkeyContext.getRegisteredArbitraryBuilders()
+				.stream()
+				.map(it -> new MatcherOperator<>(
+					it.getMatcher(),
+					((DefaultArbitraryBuilder<?>)it.getOperator()).getContext().getContainerInfoManipulators()
+				))
+				.collect(Collectors.toList());
+
+		return new TraverseContext(
+			new ArrayList<>(),
+			this.getContainerInfoManipulators(),
+			registeredContainerInfoManipulators,
+			this.getPropertyConfigurers(),
+			this.getArbitraryIntrospectorsByType(),
+			this.isValidOnly(),
+			this.monkeyContext
+		);
 	}
 
 	private static class FixedState {

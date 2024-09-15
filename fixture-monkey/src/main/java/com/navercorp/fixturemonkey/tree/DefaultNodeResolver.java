@@ -42,8 +42,10 @@ public final class DefaultNodeResolver implements NodeResolver {
 			.collect(Collectors.toList());
 
 		objectNode.setNullInject(NOT_NULL_INJECT);
+		objectNode.expand();
 		for (ObjectNode node : resolved) {
 			node.setNullInject(NOT_NULL_INJECT);
+			node.expand();
 		}
 
 		return resolved;

@@ -34,9 +34,9 @@ import com.navercorp.fixturemonkey.api.arbitrary.CombinableArbitrary;
 import com.navercorp.fixturemonkey.api.container.DecomposableJavaContainer;
 import com.navercorp.fixturemonkey.api.container.DecomposedContainerValueFactory;
 import com.navercorp.fixturemonkey.api.generator.ArbitraryContainerInfo;
-import com.navercorp.fixturemonkey.api.property.ConcreteTypeDefinition;
 import com.navercorp.fixturemonkey.api.property.MapEntryElementProperty;
 import com.navercorp.fixturemonkey.api.property.Property;
+import com.navercorp.fixturemonkey.api.property.TypeDefinition;
 import com.navercorp.fixturemonkey.api.type.Types;
 import com.navercorp.fixturemonkey.tree.IdentityNodeResolver;
 import com.navercorp.fixturemonkey.tree.ObjectNode;
@@ -146,26 +146,30 @@ public final class NodeSetDecomposedValueManipulator<T> implements NodeManipulat
 			return;
 		}
 
-		List<ConcreteTypeDefinition> concreteTypeDefinitions = objectNode.getArbitraryProperty()
-			.getConcreteTypeDefinitions();
+		List<? extends TypeDefinition> concreteTypeDefinitions = objectNode.getTreeProperty()
+			.getTypeDefinitions();
 
-		for (ConcreteTypeDefinition concreteTypeDefinition : concreteTypeDefinitions) {
-			Class<?> actualConcreteType = Types.getActualType(concreteTypeDefinition.getConcreteProperty().getType());
+		for (TypeDefinition concreteTypeDefinition : concreteTypeDefinitions) {
+			Class<?> actualConcreteType = Types.getActualType(concreteTypeDefinition.getResolvedProperty().getType());
 			if (isAssignable(
 				value.getClass(),
 				actualConcreteType
 			)) {
-				Property resolvedParentProperty = concreteTypeDefinition.getConcreteProperty();
+				Property resolvedParentProperty = concreteTypeDefinition.getResolvedProperty();
 
 				if (isAssignable(
 					actualConcreteType,
 					value.getClass()
 				)) {
 					objectNode.setResolvedProperty(resolvedParentProperty);
+					objectNode.forceExpand(typeDefinition ->
+						typeDefinition.getResolvedProperty().equals(resolvedParentProperty));
 				}
 
-				List<Property> childProperties = concreteTypeDefinition.getChildPropertyLists();
-				for (ObjectNode child : children) {
+				List<Property> childProperties = concreteTypeDefinition.getPropertyGenerator()
+					.generateChildProperties(objectNode.getResolvedProperty());
+
+				for (ObjectNode child : objectNode.getChildren()) {
 					if (childProperties.contains(child.getOriginalProperty())
 						&& resolvedParentProperty.equals(child.getResolvedParentProperty())) {
 						Property childProperty = child.getOriginalProperty();

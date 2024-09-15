@@ -29,29 +29,43 @@ import javax.annotation.Nullable;
 import org.apiguardian.api.API;
 import org.apiguardian.api.API.Status;
 
+import com.navercorp.fixturemonkey.api.context.MonkeyContext;
+import com.navercorp.fixturemonkey.api.introspector.ArbitraryIntrospector;
 import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
 import com.navercorp.fixturemonkey.api.property.MapEntryElementProperty;
 import com.navercorp.fixturemonkey.api.property.Property;
 import com.navercorp.fixturemonkey.api.tree.TreeProperty;
 import com.navercorp.fixturemonkey.customizer.ContainerInfoManipulator;
 
+/**
+ * It is for internal use. The breaking changes can happen often.
+ */
 @API(since = "0.4.0", status = Status.INTERNAL)
-final class TraverseContext {
+public final class TraverseContext {
 	private final List<TreeProperty> treeProperties;
 	private final List<ContainerInfoManipulator> containerInfoManipulators;
 	private final List<MatcherOperator<List<ContainerInfoManipulator>>> registeredContainerInfoManipulators;
 	private final Map<Class<?>, List<Property>> propertyConfigurers;
+	private final Map<Class<?>, ArbitraryIntrospector> arbitraryIntrospectorConfigurer;
+	private final boolean validOnly;
+	private final MonkeyContext monkeyContext;
 
-	TraverseContext(
+	public TraverseContext(
 		List<TreeProperty> treeProperties,
 		List<ContainerInfoManipulator> containerInfoManipulators,
 		List<MatcherOperator<List<ContainerInfoManipulator>>> registeredContainerInfoManipulators,
-		Map<Class<?>, List<Property>> propertyConfigurers
+		Map<Class<?>, List<Property>> propertyConfigurers,
+		Map<Class<?>, ArbitraryIntrospector> arbitraryIntrospectorConfigurer,
+		boolean validOnly,
+		MonkeyContext monkeyContext
 	) {
 		this.treeProperties = treeProperties;
 		this.containerInfoManipulators = containerInfoManipulators;
 		this.registeredContainerInfoManipulators = registeredContainerInfoManipulators;
 		this.propertyConfigurers = propertyConfigurers;
+		this.arbitraryIntrospectorConfigurer = arbitraryIntrospectorConfigurer;
+		this.validOnly = validOnly;
+		this.monkeyContext = monkeyContext;
 	}
 
 	@Nullable
@@ -69,6 +83,18 @@ final class TraverseContext {
 
 	public Map<Class<?>, List<Property>> getPropertyConfigurers() {
 		return propertyConfigurers;
+	}
+
+	public Map<Class<?>, ArbitraryIntrospector> getArbitraryIntrospectorConfigurer() {
+		return arbitraryIntrospectorConfigurer;
+	}
+
+	public boolean isValidOnly() {
+		return validOnly;
+	}
+
+	public MonkeyContext getMonkeyContext() {
+		return monkeyContext;
 	}
 
 	public TraverseContext appendArbitraryProperty(
@@ -97,7 +123,10 @@ final class TraverseContext {
 			treeProperties,
 			concat,
 			this.registeredContainerInfoManipulators,
-			propertyConfigurers
+			propertyConfigurers,
+			this.arbitraryIntrospectorConfigurer,
+			this.validOnly,
+			this.monkeyContext
 		);
 	}
 
@@ -131,7 +160,10 @@ final class TraverseContext {
 			newArbitraryPropertyList,
 			new ArrayList<>(this.containerInfoManipulators),
 			this.registeredContainerInfoManipulators,
-			this.propertyConfigurers
+			this.propertyConfigurers,
+			this.arbitraryIntrospectorConfigurer,
+			this.validOnly,
+			this.monkeyContext
 		);
 	}
 

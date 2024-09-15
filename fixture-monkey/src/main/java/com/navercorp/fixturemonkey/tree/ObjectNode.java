@@ -20,6 +20,8 @@ package com.navercorp.fixturemonkey.tree;
 
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -34,14 +36,20 @@ import org.apiguardian.api.API.Status;
 
 import com.navercorp.fixturemonkey.api.arbitrary.CombinableArbitrary;
 import com.navercorp.fixturemonkey.api.container.ConcurrentLruCache;
+import com.navercorp.fixturemonkey.api.context.MonkeyContext;
+import com.navercorp.fixturemonkey.api.context.MonkeyGeneratorContext;
 import com.navercorp.fixturemonkey.api.generator.ArbitraryContainerInfo;
 import com.navercorp.fixturemonkey.api.generator.ArbitraryGenerator;
 import com.navercorp.fixturemonkey.api.generator.ArbitraryGeneratorContext;
 import com.navercorp.fixturemonkey.api.generator.ArbitraryProperty;
+import com.navercorp.fixturemonkey.api.generator.CompositeArbitraryGenerator;
 import com.navercorp.fixturemonkey.api.generator.ContainerPropertyGenerator;
+import com.navercorp.fixturemonkey.api.generator.IntrospectedArbitraryGenerator;
 import com.navercorp.fixturemonkey.api.generator.ObjectProperty;
 import com.navercorp.fixturemonkey.api.generator.ObjectPropertyGenerator;
 import com.navercorp.fixturemonkey.api.generator.ObjectPropertyGeneratorContext;
+import com.navercorp.fixturemonkey.api.generator.ValidateArbitraryGenerator;
+import com.navercorp.fixturemonkey.api.introspector.ArbitraryIntrospector;
 import com.navercorp.fixturemonkey.api.lazy.LazyArbitrary;
 import com.navercorp.fixturemonkey.api.option.FixtureMonkeyOptions;
 import com.navercorp.fixturemonkey.api.property.CandidateConcretePropertyResolver;
@@ -67,16 +75,21 @@ public final class ObjectNode implements ObjectTreeNode {
 	private static final ConcurrentLruCache<Property, List<Property>> CANDIDATE_CONCRETE_PROPERTIES_BY_PROPERTY =
 		new ConcurrentLruCache<>(1024);
 
+	private final RootProperty rootProperty;
+
 	@Nullable
 	private final Property resolvedParentProperty;
+	private final TreeProperty treeProperty;
+	private final TraverseContext traverseContext;
+
 	private Property resolvedProperty;
-	private TreeProperty treeProperty;
 	@Nullable
 	private ObjectNode parent = null;
 	private List<ObjectNode> children;
 	@Nullable
 	private CombinableArbitrary<?> arbitrary;
 	private double nullInject;
+	private boolean expanded = false;
 
 	private final List<NodeManipulator> manipulators = new ArrayList<>();
 	private final List<ContainerInfoManipulator> containerInfoManipulators = new ArrayList<>();
@@ -86,7 +99,7 @@ public final class ObjectNode implements ObjectTreeNode {
 		new ArrayList<>();
 
 	private final LazyArbitrary<Boolean> childNotCacheable = LazyArbitrary.lazy(() -> {
-		for (ObjectNode child : children) {
+		for (ObjectNode child : this.getChildren()) {
 			if (child.manipulated() || child.childNotCacheable.getValue() || child.treeProperty.isContainer()) {
 				return true;
 			}
@@ -107,22 +120,19 @@ public final class ObjectNode implements ObjectTreeNode {
 		);
 	});
 
-	private final FixtureMonkeyOptions fixtureMonkeyOptions;
-	private final TraverseContext traverseContext;
-
 	ObjectNode(
+		RootProperty rootProperty,
 		@Nullable Property resolvedParentProperty,
 		Property resolvedProperty,
 		TreeProperty treeProperty,
 		double nullInject,
-		FixtureMonkeyOptions fixtureMonkeyOptions,
 		TraverseContext traverseContext
 	) {
+		this.rootProperty = rootProperty;
 		this.resolvedParentProperty = resolvedParentProperty;
 		this.resolvedProperty = resolvedProperty;
 		this.treeProperty = treeProperty;
 		this.nullInject = nullInject;
-		this.fixtureMonkeyOptions = fixtureMonkeyOptions;
 		this.traverseContext = traverseContext;
 	}
 
@@ -149,10 +159,6 @@ public final class ObjectNode implements ObjectTreeNode {
 		return this.treeProperty;
 	}
 
-	public void setTreeProperty(TreeProperty treeProperty) {
-		this.treeProperty = treeProperty;
-	}
-
 	/**
 	 * The original property refers to the class-time property, which means it is the type in a class file.
 	 * It can be an abstract class or interface, unlike the {@link #resolvedProperty}
@@ -164,6 +170,10 @@ public final class ObjectNode implements ObjectTreeNode {
 	}
 
 	public List<ObjectNode> getChildren() {
+		if (this.children == null) {
+			this.expand();
+		}
+
 		return this.children;
 	}
 
@@ -259,10 +269,24 @@ public final class ObjectNode implements ObjectTreeNode {
 		return lazyPropertyPath;
 	}
 
+	public boolean isMutableChildNode() {
+		return this.getArbitrary() != null
+			&& (this.getTreeProperty().isContainer() || this.getTreeProperty().getTypeDefinitions().size() > 1);
+	}
+
 	@Override
 	public void expand() {
+		this.expand(it -> it.getResolvedProperty().equals(this.getResolvedProperty()));
+	}
+
+	public void expand(Predicate<TypeDefinition> typeDefinitionFilter) {
+		if (expanded) {
+			return;
+		}
+
 		this.setChildren(
 			this.getTreeProperty().getTypeDefinitions().stream()
+				.filter(typeDefinitionFilter)
 				.flatMap(
 					typeDefinition -> {
 						if (this.getTreeProperty().isContainer()) {
@@ -280,11 +304,17 @@ public final class ObjectNode implements ObjectTreeNode {
 				)
 				.collect(Collectors.toList())
 		);
+		this.expanded = true;
 	}
 
 	@Override
 	public void forceExpand() {
+		this.forceExpand(it -> it.getResolvedProperty().equals(this.getResolvedProperty()));
+	}
+
+	public void forceExpand(Predicate<TypeDefinition> typeDefinitionFilter) {
 		List<ObjectNode> newChildren = this.getTreeProperty().getTypeDefinitions().stream()
+			.filter(typeDefinitionFilter)
 			.flatMap(
 				typeDefinition -> {
 					if (this.getTreeProperty().isContainer()) {
@@ -302,6 +332,18 @@ public final class ObjectNode implements ObjectTreeNode {
 			).collect(Collectors.toList());
 
 		this.setChildren(newChildren);
+		this.expanded = true;
+	}
+
+	public CombinableArbitrary<?> generate(@Nullable ArbitraryGeneratorContext parentContext) {
+		if (this.isMutableChildNode()) {
+			return new MutableCombinableArbitrary<>(
+				LazyArbitrary.lazy(() -> generateIntrospected(parentContext)),
+				this::forceExpand
+			);
+		}
+
+		return generateIntrospected(parentContext);
 	}
 
 	private Stream<ObjectNode> expandContainerNode(TypeDefinition typeDefinition, TraverseContext traverseContext) {
@@ -335,27 +377,27 @@ public final class ObjectNode implements ObjectTreeNode {
 
 	static ObjectNode generateRootNode(
 		RootProperty rootProperty,
-		FixtureMonkeyOptions fixtureMonkeyOptions,
 		TraverseContext traverseContext
 	) {
 		return ObjectNode.generateObjectNode(
+			rootProperty,
 			null,
 			rootProperty,
 			null,
 			0.0d,
-			fixtureMonkeyOptions,
 			traverseContext
 		);
 	}
 
 	static ObjectNode generateObjectNode(
+		RootProperty rootProperty,
 		@Nullable Property resolvedParentProperty,
 		Property property,
 		@Nullable Integer propertySequence,
 		double parentNullInject,
-		FixtureMonkeyOptions fixtureMonkeyOptions,
 		TraverseContext context
 	) {
+		FixtureMonkeyOptions fixtureMonkeyOptions = context.getMonkeyContext().getFixtureMonkeyOptions();
 		ContainerPropertyGenerator containerPropertyGenerator =
 			fixtureMonkeyOptions.getContainerPropertyGenerator(property);
 		boolean container = containerPropertyGenerator != null;
@@ -443,18 +485,17 @@ public final class ObjectNode implements ObjectTreeNode {
 		TraverseContext nextTraverseContext = context.appendArbitraryProperty(treeProperty);
 
 		ObjectNode newObjectNode = new ObjectNode(
+			rootProperty,
 			resolvedParentProperty,
 			new CompositeTypeDefinition(typeDefinitions).getResolvedProperty(),
 			treeProperty,
 			nullInject,
-			fixtureMonkeyOptions,
 			nextTraverseContext
 		);
 
 		if (appliedContainerInfoManipulator != null) {
 			newObjectNode.addContainerManipulator(appliedContainerInfoManipulator);
 		}
-		newObjectNode.expand();
 		return newObjectNode;
 	}
 
@@ -503,11 +544,11 @@ public final class ObjectNode implements ObjectTreeNode {
 			}
 
 			ObjectNode childNode = generateObjectNode(
+				rootProperty,
 				resolvedParentProperty,
 				childProperty,
 				sequence,
 				parentNullInject,
-				this.fixtureMonkeyOptions,
 				context
 			);
 			children.add(childNode);
@@ -602,5 +643,157 @@ public final class ObjectNode implements ObjectTreeNode {
 				return resolvedCandidateProperties;
 			}
 		);
+	}
+
+	private ArbitraryGeneratorContext generateContext(
+		@Nullable ArbitraryGeneratorContext parentContext
+	) {
+		Map<ArbitraryProperty, ObjectNode> childNodesByArbitraryProperty = new HashMap<>();
+		List<ArbitraryProperty> childrenProperties = new ArrayList<>();
+
+		ArbitraryProperty arbitraryProperty = this.getArbitraryProperty();
+		Property resolvedParentProperty = this.getResolvedProperty();
+		List<ObjectNode> children = this.getChildren().stream()
+			.filter(it -> resolvedParentProperty.equals(it.getResolvedParentProperty()))
+			.collect(Collectors.toList());
+
+		for (ObjectNode childNode : children) {
+			childNodesByArbitraryProperty.put(childNode.getArbitraryProperty(), childNode);
+			childrenProperties.add(childNode.getArbitraryProperty());
+		}
+
+		MonkeyContext monkeyContext = traverseContext.getMonkeyContext();
+		MonkeyGeneratorContext monkeyGeneratorContext =
+			monkeyContext.retrieveGeneratorContext(rootProperty);
+		return new ArbitraryGeneratorContext(
+			resolvedParentProperty,
+			arbitraryProperty,
+			childrenProperties,
+			parentContext,
+			(currentContext, prop) -> {
+				ObjectNode node = childNodesByArbitraryProperty.get(prop);
+				if (node == null) {
+					return CombinableArbitrary.NOT_GENERATED;
+				}
+
+				return node.generate(currentContext);
+			},
+			this.getLazyPropertyPath(),
+			monkeyGeneratorContext,
+			monkeyContext.getFixtureMonkeyOptions().getGenerateUniqueMaxTries(),
+			this.getNullInject()
+		);
+	}
+
+	@SuppressWarnings({"rawtypes", "unchecked"})
+	private CombinableArbitrary<?> generateIntrospected(
+		@Nullable ArbitraryGeneratorContext parentContext
+	) {
+		MonkeyContext monkeyContext = traverseContext.getMonkeyContext();
+		FixtureMonkeyOptions fixtureMonkeyOptions = monkeyContext.getFixtureMonkeyOptions();
+
+		CombinableArbitrary<?> generated;
+		if (this.getArbitrary() != null) {
+			generated = this.getArbitrary()
+				.injectNull(this.getNullInject());
+		} else {
+			CombinableArbitrary<?> cached = monkeyContext.getCachedArbitrary(this.getOriginalProperty());
+
+			if (this.cacheable() && cached != null) {
+				generated = cached;
+			} else {
+				this.expand();
+				ArbitraryGeneratorContext childArbitraryGeneratorContext = this.generateContext(parentContext);
+				ArbitraryIntrospector arbitraryIntrospector = traverseContext.getArbitraryIntrospectorConfigurer().get(
+					Types.getActualType(this.getOriginalProperty().getType())
+				);
+				generated = getArbitraryGenerator(arbitraryIntrospector)
+					.generate(childArbitraryGeneratorContext);
+
+				List<Function<CombinableArbitrary<?>, CombinableArbitrary<?>>> customizers =
+					this.getGeneratedArbitraryCustomizers();
+
+				for (Function<CombinableArbitrary<?>, CombinableArbitrary<?>> customizer : customizers) {
+					generated = customizer.apply(generated);
+				}
+
+				if (this.cacheable()) {
+					monkeyContext.putCachedArbitrary(
+						this.getOriginalProperty(),
+						generated
+					);
+				}
+			}
+		}
+
+		List<Predicate> arbitraryFilters = this.getArbitraryFilters();
+		for (Predicate predicate : arbitraryFilters) {
+			generated = generated.filter(fixtureMonkeyOptions.getGenerateMaxTries(), predicate);
+		}
+
+		return generated;
+	}
+
+	private ArbitraryGenerator getArbitraryGenerator(@Nullable ArbitraryIntrospector arbitraryIntrospector) {
+		FixtureMonkeyOptions fixtureMonkeyOptions = traverseContext.getMonkeyContext().getFixtureMonkeyOptions();
+
+		ArbitraryGenerator arbitraryGenerator = fixtureMonkeyOptions.getDefaultArbitraryGenerator();
+
+		if (arbitraryIntrospector != null) {
+			arbitraryGenerator = new CompositeArbitraryGenerator(
+				Arrays.asList(
+					new IntrospectedArbitraryGenerator(arbitraryIntrospector),
+					arbitraryGenerator
+				)
+			);
+		}
+
+		if (traverseContext.isValidOnly()) {
+			arbitraryGenerator = new CompositeArbitraryGenerator(
+				Arrays.asList(
+					arbitraryGenerator,
+					new ValidateArbitraryGenerator(
+						fixtureMonkeyOptions.getJavaConstraintGenerator(),
+						fixtureMonkeyOptions.getDecomposedContainerValueFactory()
+					)
+				)
+			);
+		}
+
+		return arbitraryGenerator;
+	}
+
+	private static final class MutableCombinableArbitrary<T> implements CombinableArbitrary<T> {
+		private final LazyArbitrary<CombinableArbitrary<T>> resolveArbitrary;
+		private final Runnable mutateChildNodes;
+
+		private MutableCombinableArbitrary(
+			LazyArbitrary<CombinableArbitrary<T>> resolveArbitrary,
+			Runnable mutateChildNodes
+		) {
+			this.resolveArbitrary = resolveArbitrary;
+			this.mutateChildNodes = mutateChildNodes;
+		}
+
+		@Override
+		public T combined() {
+			return resolveArbitrary.getValue().combined();
+		}
+
+		@Override
+		public Object rawValue() {
+			return resolveArbitrary.getValue().rawValue();
+		}
+
+		@Override
+		public void clear() {
+			mutateChildNodes.run();
+			resolveArbitrary.clear();
+		}
+
+		@Override
+		public boolean fixed() {
+			return resolveArbitrary.getValue().fixed();
+		}
 	}
 }

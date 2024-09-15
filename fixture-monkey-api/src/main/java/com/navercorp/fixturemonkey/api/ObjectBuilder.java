@@ -16,20 +16,7 @@
  * limitations under the License.
  */
 
-package com.navercorp.fixturemonkey.api.exception;
+package com.navercorp.fixturemonkey.api;
 
-import org.apiguardian.api.API;
-import org.apiguardian.api.API.Status;
-
-import com.navercorp.fixturemonkey.api.arbitrary.CombinableArbitrary;
-
-/**
- * It is thrown when the size of generated container is not valid.
- * It causes all {@link CombinableArbitrary}s to regenerate.
- */
-@API(since = "0.6.9", status = Status.MAINTAINED)
-public final class ContainerSizeFilterMissException extends RuntimeException {
-	public ContainerSizeFilterMissException(String message) {
-		super(message);
-	}
+public interface ObjectBuilder<T> {
 }

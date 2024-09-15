@@ -18,75 +18,29 @@
 
 package com.navercorp.fixturemonkey.tree;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
-
-import javax.annotation.Nullable;
 
 import org.apiguardian.api.API;
 import org.apiguardian.api.API.Status;
 
 import com.navercorp.fixturemonkey.api.arbitrary.CombinableArbitrary;
-import com.navercorp.fixturemonkey.api.context.MonkeyContext;
-import com.navercorp.fixturemonkey.api.context.MonkeyGeneratorContext;
-import com.navercorp.fixturemonkey.api.generator.ArbitraryGenerator;
-import com.navercorp.fixturemonkey.api.generator.ArbitraryGeneratorContext;
-import com.navercorp.fixturemonkey.api.generator.ArbitraryProperty;
-import com.navercorp.fixturemonkey.api.generator.CompositeArbitraryGenerator;
-import com.navercorp.fixturemonkey.api.generator.IntrospectedArbitraryGenerator;
-import com.navercorp.fixturemonkey.api.generator.ValidateArbitraryGenerator;
-import com.navercorp.fixturemonkey.api.introspector.ArbitraryIntrospector;
-import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
-import com.navercorp.fixturemonkey.api.option.FixtureMonkeyOptions;
-import com.navercorp.fixturemonkey.api.property.Property;
 import com.navercorp.fixturemonkey.api.property.RootProperty;
-import com.navercorp.fixturemonkey.api.type.Types;
-import com.navercorp.fixturemonkey.customizer.ContainerInfoManipulator;
 import com.navercorp.fixturemonkey.customizer.NodeManipulator;
 
 @API(since = "0.4.0", status = Status.MAINTAINED)
 public final class ObjectTree {
 	private final RootProperty rootProperty;
 	private final ObjectNode rootNode;
-	private final FixtureMonkeyOptions fixtureMonkeyOptions;
 	private final ObjectTreeMetadata metadata;
-	private final MonkeyContext monkeyContext;
-	private final boolean validOnly;
-	private final Map<Class<?>, ArbitraryIntrospector> arbitraryIntrospectorConfigurer;
 
 	public ObjectTree(
 		RootProperty rootProperty,
-		FixtureMonkeyOptions fixtureMonkeyOptions,
-		MonkeyContext monkeyContext,
-		boolean validOnly,
-		Map<Class<?>, ArbitraryIntrospector> arbitraryIntrospectorConfigurer,
-		List<ContainerInfoManipulator> containerInfoManipulators,
-		Map<Class<?>, List<Property>> propertyConfigurers,
-		List<MatcherOperator<List<ContainerInfoManipulator>>> registeredContainerInfoManipulators
+		TraverseContext traverseContext
 	) {
 		this.rootProperty = rootProperty;
-		this.fixtureMonkeyOptions = fixtureMonkeyOptions;
-		this.monkeyContext = monkeyContext;
-		this.rootNode = ObjectNode.generateRootNode(
-			rootProperty,
-			fixtureMonkeyOptions,
-			new TraverseContext(
-				new ArrayList<>(),
-				containerInfoManipulators,
-				registeredContainerInfoManipulators,
-				propertyConfigurers
-			)
-		);
+		this.rootNode = ObjectNode.generateRootNode(rootProperty, traverseContext);
 		MetadataCollector metadataCollector = new MetadataCollector(rootNode);
 		this.metadata = metadataCollector.collect();
-		this.validOnly = validOnly;
-		this.arbitraryIntrospectorConfigurer = arbitraryIntrospectorConfigurer;
 	}
 
 	public ObjectTreeMetadata getMetadata() {
@@ -103,118 +57,6 @@ public final class ObjectTree {
 	}
 
 	public CombinableArbitrary<?> generate() {
-		return generateIntrospected(rootNode, null);
-	}
-
-	private ArbitraryGeneratorContext generateContext(
-		ObjectNode objectNode,
-		@Nullable ArbitraryGeneratorContext parentContext
-	) {
-		Map<ArbitraryProperty, ObjectNode> childNodesByArbitraryProperty = new HashMap<>();
-		List<ArbitraryProperty> childrenProperties = new ArrayList<>();
-
-		ArbitraryProperty arbitraryProperty = objectNode.getArbitraryProperty();
-		Property resolvedParentProperty = objectNode.getResolvedProperty();
-		List<ObjectNode> children = objectNode.getChildren().stream()
-			.filter(it -> resolvedParentProperty.equals(it.getResolvedParentProperty()))
-			.collect(Collectors.toList());
-
-		for (ObjectNode childNode : children) {
-			childNodesByArbitraryProperty.put(childNode.getArbitraryProperty(), childNode);
-			childrenProperties.add(childNode.getArbitraryProperty());
-		}
-
-		MonkeyGeneratorContext monkeyGeneratorContext = monkeyContext.retrieveGeneratorContext(rootProperty);
-		return new ArbitraryGeneratorContext(
-			resolvedParentProperty,
-			arbitraryProperty,
-			childrenProperties,
-			parentContext,
-			(currentContext, prop) -> {
-				ObjectNode node = childNodesByArbitraryProperty.get(prop);
-				if (node == null) {
-					return CombinableArbitrary.NOT_GENERATED;
-				}
-
-				return generateIntrospected(node, currentContext);
-			},
-			objectNode.getLazyPropertyPath(),
-			monkeyGeneratorContext,
-			fixtureMonkeyOptions.getGenerateUniqueMaxTries(),
-			objectNode.getNullInject()
-		);
-	}
-
-	@SuppressWarnings({"rawtypes", "unchecked"})
-	private CombinableArbitrary<?> generateIntrospected(
-		ObjectNode node,
-		@Nullable ArbitraryGeneratorContext currentContext
-	) {
-		CombinableArbitrary<?> generated;
-		if (node.getArbitrary() != null) {
-			generated = node.getArbitrary()
-				.injectNull(node.getNullInject());
-		} else {
-			CombinableArbitrary<?> cached = monkeyContext.getCachedArbitrary(node.getOriginalProperty());
-
-			if (node.cacheable() && cached != null) {
-				generated = cached;
-			} else {
-				ArbitraryGeneratorContext childArbitraryGeneratorContext = this.generateContext(node, currentContext);
-				ArbitraryIntrospector arbitraryIntrospector = arbitraryIntrospectorConfigurer.get(
-					Types.getActualType(node.getOriginalProperty().getType())
-				);
-				generated = getArbitraryGenerator(arbitraryIntrospector)
-					.generate(childArbitraryGeneratorContext);
-
-				List<Function<CombinableArbitrary<?>, CombinableArbitrary<?>>> customizers =
-					node.getGeneratedArbitraryCustomizers();
-
-				for (Function<CombinableArbitrary<?>, CombinableArbitrary<?>> customizer : customizers) {
-					generated = customizer.apply(generated);
-				}
-
-				if (node.cacheable()) {
-					monkeyContext.putCachedArbitrary(
-						node.getOriginalProperty(),
-						generated
-					);
-				}
-			}
-		}
-
-		List<Predicate> arbitraryFilters = node.getArbitraryFilters();
-		for (Predicate predicate : arbitraryFilters) {
-			generated = generated.filter(fixtureMonkeyOptions.getGenerateMaxTries(), predicate);
-		}
-
-		return generated;
-	}
-
-	private ArbitraryGenerator getArbitraryGenerator(@Nullable ArbitraryIntrospector arbitraryIntrospector) {
-		ArbitraryGenerator arbitraryGenerator = this.fixtureMonkeyOptions.getDefaultArbitraryGenerator();
-
-		if (arbitraryIntrospector != null) {
-			arbitraryGenerator = new CompositeArbitraryGenerator(
-				Arrays.asList(
-					new IntrospectedArbitraryGenerator(arbitraryIntrospector),
-					arbitraryGenerator
-				)
-			);
-		}
-
-		if (validOnly) {
-			arbitraryGenerator = new CompositeArbitraryGenerator(
-				Arrays.asList(
-					arbitraryGenerator,
-					new ValidateArbitraryGenerator(
-						this.fixtureMonkeyOptions.getJavaConstraintGenerator(),
-						this.fixtureMonkeyOptions.getDecomposedContainerValueFactory()
-					)
-				)
-			);
-		}
-
-		return arbitraryGenerator;
+		return rootNode.generate(null);
 	}
 }

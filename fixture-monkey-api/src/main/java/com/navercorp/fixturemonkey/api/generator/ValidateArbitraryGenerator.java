@@ -54,7 +54,7 @@ import com.navercorp.fixturemonkey.api.constraint.JavaIntegerConstraint;
 import com.navercorp.fixturemonkey.api.constraint.JavaStringConstraint;
 import com.navercorp.fixturemonkey.api.container.DecomposableJavaContainer;
 import com.navercorp.fixturemonkey.api.container.DecomposedContainerValueFactory;
-import com.navercorp.fixturemonkey.api.exception.ContainerSizeFilterMissException;
+import com.navercorp.fixturemonkey.api.exception.RetryableFilterMissException;
 import com.navercorp.fixturemonkey.api.type.Types;
 
 @API(since = "0.6.9", status = Status.MAINTAINED)
@@ -321,14 +321,14 @@ public final class ValidateArbitraryGenerator implements ArbitraryGenerator {
 					if (javaContainerConstraint.isNotEmpty()) {
 						DecomposableJavaContainer decomposableJavaContainer = decomposedContainerValueFactory.from(it);
 						if (decomposableJavaContainer.getSize() == 0) {
-							throw new ContainerSizeFilterMissException("Container size is should not be 0.");
+							throw new RetryableFilterMissException("Container size is should not be 0.");
 						}
 					}
 
 					if (javaContainerConstraint.getMinSize() != null) {
 						DecomposableJavaContainer decomposableJavaContainer = decomposedContainerValueFactory.from(it);
 						if (decomposableJavaContainer.getSize() < javaContainerConstraint.getMinSize()) {
-							throw new ContainerSizeFilterMissException(
+							throw new RetryableFilterMissException(
 								"Container size is should not be less than " + javaContainerConstraint.getMinSize()
 							);
 						}
@@ -337,7 +337,7 @@ public final class ValidateArbitraryGenerator implements ArbitraryGenerator {
 					if (javaContainerConstraint.getMaxSize() != null) {
 						DecomposableJavaContainer decomposableJavaContainer = decomposedContainerValueFactory.from(it);
 						if (decomposableJavaContainer.getSize() > javaContainerConstraint.getMaxSize()) {
-							throw new ContainerSizeFilterMissException(
+							throw new RetryableFilterMissException(
 								"Container size is should not be greater than " + javaContainerConstraint.getMaxSize()
 							);
 						}

@@ -31,6 +31,10 @@ public final class RetryableFilterMissException extends RuntimeException {
 		super(message, cause);
 	}
 
+	public RetryableFilterMissException(String message) {
+		super(message);
+	}
+
 	public RetryableFilterMissException(Throwable cause) {
 		super(cause);
 	}

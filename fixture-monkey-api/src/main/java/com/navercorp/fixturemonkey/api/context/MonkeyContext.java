@@ -20,13 +20,17 @@ package com.navercorp.fixturemonkey.api.context;
 
 import static com.navercorp.fixturemonkey.api.type.Types.isJavaType;
 
+import java.util.List;
 import java.util.TreeMap;
 
 import org.apiguardian.api.API;
 import org.apiguardian.api.API.Status;
 
+import com.navercorp.fixturemonkey.api.ObjectBuilder;
 import com.navercorp.fixturemonkey.api.arbitrary.CombinableArbitrary;
 import com.navercorp.fixturemonkey.api.container.ConcurrentLruCache;
+import com.navercorp.fixturemonkey.api.matcher.MatcherOperator;
+import com.navercorp.fixturemonkey.api.option.FixtureMonkeyOptions;
 import com.navercorp.fixturemonkey.api.property.Property;
 import com.navercorp.fixturemonkey.api.property.RootProperty;
 import com.navercorp.fixturemonkey.api.type.Types;
@@ -36,19 +40,25 @@ public final class MonkeyContext {
 	private final ConcurrentLruCache<Property, CombinableArbitrary<?>> arbitrariesByProperty;
 	private final ConcurrentLruCache<Property, CombinableArbitrary<?>> javaArbitrariesByProperty;
 	private final ConcurrentLruCache<RootProperty, MonkeyGeneratorContext> generatorContextByRootProperty;
+	private final List<MatcherOperator<? extends ObjectBuilder<?>>> registeredArbitraryBuilders;
+	private final FixtureMonkeyOptions fixtureMonkeyOptions;
 
 	public MonkeyContext(
 		ConcurrentLruCache<Property, CombinableArbitrary<?>> arbitrariesByProperty,
 		ConcurrentLruCache<Property, CombinableArbitrary<?>> javaArbitrariesByProperty,
-		ConcurrentLruCache<RootProperty, MonkeyGeneratorContext> generatorContextByRootProperty
+		ConcurrentLruCache<RootProperty, MonkeyGeneratorContext> generatorContextByRootProperty,
+		List<MatcherOperator<? extends ObjectBuilder<?>>> registeredArbitraryBuilders,
+		FixtureMonkeyOptions fixtureMonkeyOptions
 	) {
 		this.arbitrariesByProperty = arbitrariesByProperty;
 		this.javaArbitrariesByProperty = javaArbitrariesByProperty;
 		this.generatorContextByRootProperty = generatorContextByRootProperty;
+		this.registeredArbitraryBuilders = registeredArbitraryBuilders;
+		this.fixtureMonkeyOptions = fixtureMonkeyOptions;
 	}
 
-	public static MonkeyContextBuilder builder() {
-		return new MonkeyContextBuilder();
+	public static MonkeyContextBuilder builder(FixtureMonkeyOptions fixtureMonkeyOptions) {
+		return new MonkeyContextBuilder(fixtureMonkeyOptions);
 	}
 
 	public CombinableArbitrary<?> getCachedArbitrary(Property property) {
@@ -69,10 +79,20 @@ public final class MonkeyContext {
 		arbitrariesByProperty.put(property, combinableArbitrary);
 	}
 
-	public MonkeyGeneratorContext retrieveGeneratorContext(RootProperty rootProperty) {
+	public MonkeyGeneratorContext retrieveGeneratorContext(
+		RootProperty rootProperty
+	) {
 		return generatorContextByRootProperty.computeIfAbsent(
 			rootProperty,
 			property -> new MonkeyGeneratorContext(new TreeMap<>())
 		);
+	}
+
+	public List<MatcherOperator<? extends ObjectBuilder<?>>> getRegisteredArbitraryBuilders() {
+		return registeredArbitraryBuilders;
+	}
+
+	public FixtureMonkeyOptions getFixtureMonkeyOptions() {
+		return fixtureMonkeyOptions;
 	}
 }
